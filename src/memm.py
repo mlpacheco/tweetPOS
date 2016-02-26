@@ -1,5 +1,7 @@
 import numpy as np
 import random
+import sys
+import math
 
 class MEMM(object):
 
@@ -17,13 +19,16 @@ class MEMM(object):
 
     # keeping it a separate function
     # in case we have to deal with sparsity here
-    def dot_product(self, x_vect, i):
-        dp = np.dot(x_vect, self.weights[i].T)
-        return np.add(dp, self.bias[i])
+    def dot_product(self, x_vect, y):
+        dp = 0.0
+        for (i, x) in x_vect:
+            dp += x * self.weights[y][i]
+        dp += self.bias[y]
+        return dp
 
-    def softmax(self, x_vect, i):
-        num = np.exp(self.dot_product(x_vect, i))
-        denom = np.sum([np.exp(self.dot_product(x_vect, j))
+    def softmax(self, x_vect, i, a):
+        num = np.exp(self.dot_product(x_vect, i) - a)
+        denom = np.sum([np.exp(self.dot_product(x_vect, j) - a)
                         for j in range(self.n_classes)])
         return num/denom
 
@@ -34,36 +39,62 @@ class MEMM(object):
 
     def update_weights(self, x_vect, y):
         # update includes regularization parameter
-        probs = [self.softmax(x_vect, i) for i in range(self.n_classes)]
+        # use constant a to deal with overflow
+        a = max([self.dot_product(x_vect, i)
+                 for i in range(self.n_classes)])
+        probs = [self.softmax(x_vect, i, a)
+                 for i in range(self.n_classes)]
+        #print probs
+        #print "weights", self.weights
         for j in range(self.n_classes):
-            for i in range(self.n_feats):
+            for i, x in x_vect:
                 if j == y:
                     self.weights[j][i] += \
-                        (x_vect[i] - probs[j] * x_vect[i]) \
-                        + self.lmbd * weights[j][i]
+                        (x - probs[j] * x) \
+                        + self.lmbd * self.weights[j][i]
                     self.bias[j] += 1 - probs[j]
                 else:
                     self.weights[j][i] += \
-                         - probs[j] * x_vect[i] \
-                         + self.lmbd * weights[j][i]
+                         - probs[j] * x \
+                         + self.lmbd * self.weights[j][i]
                     self.bias[j] += - probs[j]
 
-    def fit(self, samples, labels):
-        self.dict_labels = dict(zip(set(labels), range(0, len(set(labels)))))
-        labels = [self.dict_labels[i] for i in labels]
+    def fit(self, samples, labels, n_feats):
+        print "fitting a multinomial logistic regression model..."
+        self.dict_labels = dict(zip(range(0, len(set(labels))), set(labels)))
+        inverse_dict = dict(map(reversed, self.dict_labels.items()))
+        labels = [inverse_dict[i] for i in labels]
 
         self.n_classes = len(set(labels))
-        self.n_feats = samples.shape[1]
+        self.n_feats = n_feats
 
         self.init_weights()
 
         for i in range(self.n_iter):
+            print "iteration: ", i
             for x, y in zip(samples, labels):
                 self.update_weights(x, y)
+        print "done."
 
-    def predict(self, samples):
-        y_pred = [self.argmax(x) for x in samples]
-        return np.array([self.dict_labels[y] for y in y_pred])
+    def predict_sequences(self, observation_list):
+        print "decoding sequences..."
+        y_seq = []
+        for i, obs in enumerate(observation_list):
+            y_seq.append(self.viterbi(obs))
+            sys.stdout.write("\r\textracted {0}% of sequences".\
+                    format((i * 100) / len(observation_list)))
+        sys.stdout.write('\n')
+
+        ret_tok = []
+        ret_seq = []
+
+        for (prob, path) in y_seq:
+            path = [self.dict_labels[x] for x in path]
+            ret_tok += path
+            ret_seq.append(" ".join(path))
+
+        print "done."
+        return np.array(ret_tok), np.array(ret_seq)
 
     def viterbi(self, obs):
         V = [{}]
@@ -71,7 +102,9 @@ class MEMM(object):
 
         # initialize base cases
         for y in range(self.n_classes):
-            V[0][y] = self.softmax(obs[0])
+            a = max([self.dot_product(obs[0], i)
+                 for i in range(self.n_classes)])
+            V[0][y] = self.softmax(obs[0], y, a)
             path[y] = [y]
 
         # run viterbi for t > 0
@@ -79,9 +112,12 @@ class MEMM(object):
             V.append({})
             newpath = {}
 
-            for y in self.states:
-                (prob, state) = max((V[t-1][y0] * self.softmax(obs[t], y), y0)
-                                for y0 in self.states)
+            a = max([self.dot_product(obs[t], i)
+                 for i in range(self.n_classes)])
+
+            for y in range(self.n_classes):
+                (prob, state) = max((V[t-1][y0] * self.softmax(obs[t], y, a), y0)
+                                for y0 in range(self.n_classes))
                 V[t][y] = prob
                 newpath[y] = path[state] + [y]
 
@@ -90,5 +126,5 @@ class MEMM(object):
 
         # return the most likely sequence over the given time frame
         n = len(obs) - 1
-        (prob, state) = max((V[n][y], y) for y in self._states)
+        (prob, state) = max((V[n][y], y) for y in range(self.n_classes))
         return (prob, path[state])

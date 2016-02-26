@@ -25,8 +25,10 @@ class MergeFE(FeatureExtractor):
         self._underlying_fe = basis_fe
 
     def train(self, sequences):
+        self.num_feats = 0
         for fe in self._underlying_fe:
             fe.train(sequences)
+            self.num_feats += fe.num_feats
 
     def extract_sequence(self, sequence):
         ret = self._underlying_fe[0].extract_sequence(sequence)
@@ -36,29 +38,31 @@ class MergeFE(FeatureExtractor):
         return np.asarray(ret)
 
 '''contains ngram: binary'''
-class NgramFE(FeatureExtractor):
-
-    def __init__(self, m, n):
-        self.m = m
-        self.n = n
+class UnigramsFE(FeatureExtractor):
 
     def train(self, sequences):
-        documents = []
+        unigrams = []
         for s in sequences:
-            documents += s.preproc_tokens
-        self.ngram_vectorizer = \
-            CountVectorizer(ngram_range=(self.m,self.n), binary=True)
-        self.ngram_vectorizer.fit(documents)
+            unigrams += s.preproc_tokens
+        self.feats = dict(zip(set(unigrams), range(0, len(set(unigrams)))))
+        self.num_feats = len(self.feats.keys())
 
     def extract_sequence(self, sequence):
-        ret = self._ngram_vectorizer.transform(sequence.preproc_tokens)
-        return ret.toarray()
+        ret = []
+        for i, g in enumerate(sequence.preproc_tokens):
+            f = [0.0] * self.num_feats
+            try:
+                f[self.feats[g]] = 1.0
+            except:
+                pass
+            ret.append(f)
+        return np.asarray(ret)
 
 '''contains digits: binary'''
 class DigitsFE(FeatureExtractor):
 
     def train(self, sequences):
-        pass
+        self.num_feats = 1
 
     def extract_sequence(self, sequence):
         ret = []
@@ -73,7 +77,7 @@ class DigitsFE(FeatureExtractor):
 class HyphensFE(FeatureExtractor):
 
     def train(self, sequences):
-        pass
+        self.num_feats = 1
 
     def extract_sequence(self, sequence):
         ret = []
@@ -91,22 +95,29 @@ class SuffixFE(FeatureExtractor):
         self.length = length
 
     def train(self, sequences):
-        documents = []
+        suffixes = []
         for s in sequences:
-            documents += [t[-self.length:] for t in s.preproc_tokens]
-        self.suffix_vectorizer = \
-            CountVectorizer(ngram_range=(1,1), binary=True)
-        self.suffix_vectorizer.fit(documents)
+            suffixes += [t[-self.length:] for t in s.preproc_tokens]
+        self.feats = dict(zip(set(suffixes), range(0, len(set(suffixes)))))
+        self.num_feats = len(self.feats.keys())
 
     def extract_sequence(self, sequence):
-        ret = self.suffix_vectorizer.transform(sequence.preproc_tokens)
-        return ret.toarray()
+        suffixes = [t[-self.length:] for t in sequence.preproc_tokens]
+        ret = []
+        for i, s in enumerate(suffixes):
+            f = [0.0] * self.num_feats
+            try:
+                f[self.feats[s]] = 1.0
+            except:
+                pass
+            ret.append(f)
+        return np.asarray(ret)
 
 '''is capitalized: binary'''
 class CapitalizedFE(FeatureExtractor):
 
     def train(self, sequences):
-        pass
+        self.num_feats = 1
 
     def extract_sequence(self, sequence):
         ret = []
@@ -121,7 +132,7 @@ class CapitalizedFE(FeatureExtractor):
 class CapsLockFE(FeatureExtractor):
 
     def train(self, sequences):
-        pass
+        self.num_feats = 1
 
     def extract_sequence(self, sequence):
         ret = []
@@ -147,6 +158,7 @@ class PreviousTagsFE(FeatureExtractor):
                 tags.append(s.labels[i-self.n])
         self.feats = dict(zip(set(tags),
                           range(0, len(set(tags)))))
+        self.num_feats = len(self.feats.keys())
 
     def extract_sequence(self, sequence):
         tags = []
@@ -158,7 +170,70 @@ class PreviousTagsFE(FeatureExtractor):
         ret = []
         for i, t in enumerate(tags):
             f = [0.0]*len(self.feats)
-            f[self.feats[t]] = 1.0
+            try:
+                f[self.feats[t]] = 1.0
+            except:
+                pass
             ret.append(f)
 
+        return np.asarray(ret)
+
+'''rt pattern: binary'''
+class RetweetFE(FeatureExtractor):
+
+    def train(self, sequences):
+        self.num_feats = 1
+
+    def extract_sequence(self, sequence):
+        ret = []
+        for token in sequence.tokens:
+            if re.match(r'RT', token):
+                ret.append([1.0])
+            else:
+                ret.append([0.0])
+        return np.asarray(ret)
+
+'''username pattern: binary'''
+class UsernameFE(FeatureExtractor):
+
+    def train(self, sequences):
+        self.num_feats = 1
+
+    def extract_sequence(self, sequence):
+        ret = []
+        for token in sequence.tokens:
+            if re.match(r'@\w+', token):
+                ret.append([1.0])
+            else:
+                ret.append([0.0])
+        return np.asarray(ret)
+
+'''hashtag pattern: binary'''
+class HashtagFE(FeatureExtractor):
+
+    def train(self, sequences):
+        self.num_feats = 1
+
+    def extract_sequence(self, sequence):
+        ret = []
+        for token in sequence.tokens:
+            if re.match(r'#\w+', token):
+                ret.append([1.0])
+            else:
+                ret.append([0.0])
+        return np.asarray(ret)
+
+'''url pattern: binary'''
+class UrlFE(FeatureExtractor):
+
+    def train(self, sequences):
+        self.num_feats = 1
+
+    def extract_sequence(self, sequence):
+        ret = []
+        for token in sequence.tokens:
+            if re.match(r'http://.*', token):
+                ret.append([1.0])
+            else:
+                ret.append([0.0])
         return np.asarray(ret)

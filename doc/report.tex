@@ -1,0 +1,269 @@
+%----------------------------------------------------------------------------------------
+%	PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\documentclass[11pt]{article}
+%\input{mydef.tex}
+\usepackage{fancyhdr} % Required for custom headers
+\usepackage{lastpage} % Required to determine the last page for the footer
+\usepackage{extramarks} % Required for headers and footers
+\usepackage[usenames,dvipsnames]{color} % Required for custom colors
+\usepackage{graphicx} % Required to insert images
+\usepackage{listings} % Required for insertion of code
+\usepackage{courier} % Required for the courier font
+\usepackage{amssymb,amsmath}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+\usepackage{subfigure}
+\usepackage{enumitem}
+\usepackage{bm}
+\usepackage{url}
+\usepackage[stable]{footmisc}
+\usepackage{booktabs}
+\usepackage[square]{natbib}
+\usepackage{indentfirst}
+\usepackage{amsmath}
+%\usepackage[colorlinks, linkcolor=red, anchorcolor=purple, citecolor=blue]{hyperref}
+\usepackage{hyperref}
+
+\usepackage{multicol}
+
+\DeclareMathOperator{\argmax}{argmax}
+
+\setlength{\columnsep}{1cm}
+
+% Margins
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+\setlength{\headheight}{13.6pt}
+\linespread{1.1} % Line spacing
+
+% Set up the header and footer
+\pagestyle{fancy}
+\lhead{CS 590NLP} % Top left header
+\chead{}
+\rhead{Homework 1: Twitter POS Tagger} % Top right header
+\lfoot{} % Bottom left footer
+\cfoot{} % Bottom center footer
+\rfoot{Page\ \thepage\ of\ \protect\pageref{LastPage}} % Bottom right footer
+\renewcommand\headrulewidth{0.4pt} % Size of the header rule
+\renewcommand\footrulewidth{0.4pt} % Size of the footer rule
+
+\renewcommand*{\thefootnote}{\fnsymbol{footnote}}
+
+\setlength{\parskip}{.2\baselineskip}
+%\setlength\parindent{0pt} % Removes all indentation from paragraphs
+
+\title{
+\textbf{CS 590NLP Machine Learning Methods for NLP} \\ \textsc{Homework 1: Twitter POS Tagger} \\
+\normalsize\vspace{0.1in}
+}
+
+\author{
+	\textbf{Maria L. Pacheco} \\
+	Department of Computer Science\\
+	\texttt{pachecog@purdue.edu}
+}
+
+\date{\today}
+%----------------------------------------------------------------------------------------
+
+\begin{document}
+
+\maketitle
+%\thispagestyle{empty}
+
+\section{Introduction}
+
+This report describes an experiment to contrast two type of learning approaches in a structured prediction task. The chosen task is Part Of Speech Tagging: assigning a part of speech to each word in a text corpus.  In this case, the corpus corresponds to a collection of English tweets. This task was explored by \cite{Gimpel:2011:PTT:2002736.2002747}, they developed a tagset, annotations and features specific to the tackled domain, reporting results nearing 90\% accuracy on their full model and 83\% using a set of basic features.
+
+In sequence prediction tasks, such as POS tagging, two main learning frameworks are commonly applied: local and global learning. In local learning, training is done at the token level, incorporating information about the context and close neighborhood as part of the features or transitions probabilities, in case of Hidden Markov Models. Following the Markovian assumption that future states depend only on the present. Classifiers are trained locally and global inference is incorporated at prediction time. In global learning, training of the sequence is done jointly and parameters are adjusted considering the complete sequence. 
+
+A local learning algorithm: a Maximum Entropy Markov Model was implemented and a second implementation of a global algorithm: Structured Perceptron. Performance of both algorithms were compared on the same feature set.
+
+\section{Maximum Entity Markov Models}
+
+A Maximum Entity Markov Model \cite{McCallum:2000:MEM:645529.658277} is a model for sequence learning that combines a MaxEnt classifier with the inference procedure proposed in Hidden Markov Models. The idea behind MEMM is to use Softmax Regression (A generalization of Logistic Regression for the multiclass case) for training. Then, resulting weights can be used to estimate probabilities using the softmax function as an alternative to replace conditional probabilities in HMM inference. 
+
+For training in a multiclass setting our label $y$ can take on $k$ different values, corresponding to the possible part of speech tags in our domain $y \in \{1,2, ..., k\}$. Given an input $x$ corresponding to a feature vector of a token, we want to estimate the probability that $y$ will take on a value $y'$, using the softmax function:
+
+$$P(y=y'|x) = \frac{e^{w_{y'}^{T}x}}{\sum_{y=1}^{k} e^{w_{y}^{T} x}}$$
+
+The objective of the model is to maximize the log likelihood, or minimize the negative log likelihood:
+
+$$\min_w - \sum_{i} \log { P (y_i|x_i, w)} + \frac{\lambda}{2}	w^{T}w $$ 
+
+Where $\frac{\lambda}{2}	w^{T}w $ is a regularization factor to control the growth of the weight vector. 
+
+As a convex optimization problem, we can use gradient based methods to minimize $w$. As such, the update rule will be the gradient of the objective function with respect to each $w_y'$:
+
+$$w_{y'} = w_{y'} + 1 \{y = y'\} \; x -  P(y = y'|x) \; x + \lambda \; w_{y'} \;\;\;\;\;\ \forall y' \in \{1,2, ... , k\}$$
+
+In this experiment, Stochastic Gradient Descent was implemented. Updating weights for every example in every iteration. 
+
+To prevent overflow in the softmax regression when the products $w_y'^{T}x$ were too large, the products were multiplied at the top and bottom of the softmax function by a constant. 
+
+$$\frac{e^{w_{y'}^Tx - \alpha}}{\sum_{y=1}^{k} e^{w_{y}^T x - \alpha}}$$
+
+The constant was set to the maximum of the $w_{y}^T x$ terms. 
+
+Once weights are estimated, MEMM uses HMM-like inference to predict sequences. The basic idea behind HMM inference is to choose a label $y$ for a token $x$ based on: 
+
+$$\argmax_y = \prod_{i = 1}^{n} P(x_i | y_i) P(y_i|y_{i-1})$$
+
+This can be replaced with:
+
+$$\argmax_y = \prod_{i=1}^{n} P(y_i | y_{i-1}, x_i)$$
+
+Where $P(y_i | y_{i-1}, x_i)$ is nothing but the softmax function using the resulting weights of the training step
+
+$$P(y_i | y_{i-1}, x_i) = \frac{1}{Z(x_i, y_{i-1})} \; e^{w^{T}\phi(x_i,y_i)}$$
+
+Where $Z(x_i, y_{i-1})$ is a normalization factor ensuring that the distribution sums to 1. This way, we can use Viterbi to do global inference and predict sequences. 
+
+The main advantage of doing MEMM over HMM is the fact that we can incorporate different types of features easily into the model to leverage knowledge, instead of just relying on the observed probabilities using words and tags. 
+
+\section{Structured Perceptron}
+
+Structured perceptron by \cite{Collins:2002:DTM:1118693.1118694} is the perceptron version for predicting structured objects . In the scope of this experiment, it was used to predict sequences. This algorithms combines the traditional perceptron algorithm with an inference step. In this case, Viterbi will be used for inference. 
+
+In this case the label $y$ will correspond to a sequence of tags and $x$ will correspond to a sequence of samples. In each iteration for a given $x$, we will use the Viterbi algorithm to obtain a predicted sequence $\hat{y}$
+
+$$\hat{y} = \argmax_y w^T \Phi(x, y) = \sum_{j = 1}^m w_{y_j}^T \phi(x, y_{j-1}, y_j)$$
+
+then, as in the regular perceptron algorithm, updates will be make in case the predicted sequence $\hat{y}$ and the gold sequence $y^*$ are different. The update rule simply promotes the correct vector and demotes the incorrect one:
+
+$$w = w + \gamma(\Phi(x, y^*) - \Phi(x, \hat{y}))$$
+$$w = w + \sum_{j=1}^m \gamma \phi(x, y^*_{j-1}, y^*_j) - \sum_{j=1}^m \gamma \phi(x, \hat{y}_{j-1}, \hat{y}_j)$$
+
+\section{Evaluation}
+
+Both algorithms were tested on features similar to the basic features proposed by \cite{Gimpel:2011:PTT:2002736.2002747} and similar metrics were obtained. The complete set of features implemented is described in detail below. 
+
+\subsection{Feature Set}
+
+All proposed features were represented as binary type features, having a value of 1 when present and a value of 0 when not present. Features were extracted at the word level, the complete list is:
+
+\begin{itemize}
+\item Unigram features: one feature for each word in the training set.
+\item Suffix features: suffixes of size 1, 2 and 3 were extracted. 
+\item Hyphens: active if the token contains hyphens.
+\item Digits: active if the token contains digits.
+\item Capitalized: active if the token's first character is capitalized.
+\item CapsLock: active if the token is all caps.
+\item Hashtag: active if the token starts with \# and is followed by alphanumeric characters.
+\item Username: active if the token starts with \@ and is followed by alphanumeric characters
+\item Retweet: active if the token is a twitter acronym corresponding to a retweet
+\item Url: active if the token matches regexes detecting URLs. 
+\item PreviousTag features: one hot vector encoding the tag on the first position to the left from the word.
+\item PreviousTags2 features: one hot vector encoding the tag on the second position to the left from the word.
+
+\end{itemize}
+
+No preprocessing was done to the text, except making it lowercase for the Unigram and Suffix features. This decision could have affected the effectiveness of these basic features.
+
+For the MEMM algorithm, a small value for $\lambda$ was chosen to prevent weights from growing too much. In addition to the constant it prevented overflow in cases when products were too big. No additional parameter tuning was done in this case. For the Structured Perceptron some tuning was done to set a learning rate. Due to the running time of the algorithm, tuning was not exhaustive in either case.
+
+Both algorithms stopped improving around 10-15 iterations. All reported test use 10 iterations. In table \ref{table3} we can observe overall accuracy at the token level and at the sequence level. We can also observe the comparison with \cite{Gimpel:2011:PTT:2002736.2002747} basic feature system. We can observe that metrics are roughly similar, oscilating around the 80\% of accuracy. Most likely the improvement of Gimpel's CRF over the tested algorithms is due to better feature engineering, preprocessing and parameter tuning. 
+
+\begin{table}[htbp]
+\centering
+    \begin{tabular}{ | l | l | l | l | l |  }
+    \hline
+    Algorithm & Token-Acc Test & Token-Acc Dev & Seq-Acc Test & Seq-Acc Dev  \\ \hline
+    MEMM & 0.81& ~ & 0.15 & ~  \\ \hline
+    Structured Perceptron & 0.79 & ~ & 0.14 & ~ \\ \hline
+    Gimpel et. all  & 0.83 & 0.82 &  ~  & ~  \\
+    \hline
+    \end{tabular}
+       \caption{ \textbf{Overall Comparison }}
+\label{table3}
+\end{table}
+
+Tables \ref{table1} and \ref{table2} contain detailed results for all tags on the test set. Global metrics are closed, with a slight higher average F1 score of MEMM over Structured Perceptron. In most cases (though not all) the local learning framework seems to obtain slight better results. However, we can note that in cases where the support is really small, local training breaks completely. This makes sense, since the number of examples seen to generalize is too small. In these cases, global models have the advantage of the joint learning. 
+
+The features used are very simple and context was only taken into consideration at the feature level by incorporating the two previous tags. Perhaps, the global model could take more advantage of more context information.  
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l*{6}{c}r}
+Tag              & Precision & Recall & F1-Score & Support \\
+\hline
+			!  &     0.70  &    0.79   &   0.74   &    186 \\
+          \#   &    0.69    &  0.92  &    0.79    &    78 \\
+          \$   &    0.86    &  0.74   &   0.80    &    85 \\
+          \&   &    0.62   &   0.99  &    0.77   &    127 \\
+          ,     &  0.95   &   0.91  &    0.93   &    880 \\
+          @   &    1.00   &   0.99  &    1.00    &   330 \\
+          A     &  0.58  &    0.65  &    0.61  &     367 \\
+          D     &  0.89   &   0.84   &   0.86   &    449 \\
+          E    &   0.88  &    0.73   &   0.80  &      63 \\
+          G   &    0.23  &    0.21   &   0.22    &    70 \\
+          L   &    0.59  &    0.94   &   0.73    &   129 \\
+          M    &   0.00   &   0.00  &    0.00    &     0 \\
+          N    &   0.67 &     0.71   &   0.69   &    981 \\
+          O    &   0.97   &   0.86  &    0.91   &    505 \\
+          P   &    0.87 &     0.80  &    0.83   &    616 \\
+          R   &    0.56   &   0.82  &    0.67  &     339 \\
+          S    &   \textbf{0.50}  &    \textbf{0.17}   &   \textbf{0.25}   &      \textbf{6} \\
+          T    &   0.53  &    0.28  &    0.36   &     36 \\
+          U    &   1.00  &    0.97   &   0.99    &   117 \\
+          V   &    0.84  &    0.82     & 0.83    &  1053 \\
+          X    &   \textbf{0.33}  &    \textbf{0.33}  &    \textbf{0.33}    &     \textbf{6 }\\
+          Z   &    0.55   &   0.27 &     0.36  &       22 \\
+          \textasciicircum  &    0.78  &    0.43   &   0.55    &   495 \\
+          \textasciitilde   &    0.73  &    0.83   &   0.78   &    212 \\
+          \textbf{avg / total}     &  \textbf{0.80}   &   \textbf{0.79}   &   \textbf{0.78}   &  \textbf{ 7152} \\
+          \end{tabular}
+       \caption{ \textbf{Structured Perceptron }with learning rate of 0.1}
+\label{table1}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{l*{6}{c}r}
+Tag              & Precision & Recall & F1-Score & Support \\
+\hline
+          !   &    0.82   &   0.76   &   0.79    &   186 \\
+          \#    &   0.79   &   0.73  &    0.76    &    78 \\
+          \$    &   0.63   &   0.94    &  0.76     &   85 \\
+          \&    &   0.95  &    0.96    &  0.96    &   127 \\
+          ,    &   0.95  &    0.97  &    0.96   &    880 \\
+          @   &    1.00   &   0.99   &   1.00  &     330 \\
+          A   &    0.65   &   0.55   &   0.59   &    367 \\
+          D   &    0.81   &   0.93  &    0.87    &   449 \\
+          E    &   0.73   &   0.75  &    0.74    &    63 \\
+          G    &   0.25   &   0.29  &    0.27    &    70 \\
+          L   &    0.80   &   0.86  &    0.83     &  129 \\
+          N     &  0.87   &   0.57   &   0.69     &  981 \\
+          O  &     0.99   &   0.83   &   0.90  &     505 \\
+          P    &   0.78   &   0.94   &   0.86   &    616 \\
+          R   &    0.65    &  0.82  &    0.72   &    339 \\
+          S   &    \textbf{0.00 }  &   \textbf{0.00}   &  \textbf{ 0.00 }   &     \textbf{6} \\
+          T   &    0.85   &   0.61   &   0.71   &     36 \\
+          U    &   1.00   &   0.96  &    0.98    &   117 \\
+          V    &   0.75  &    0.92   &   0.82    &  1053 \\
+          X    &   \textbf{0.00}    &  \textbf{0.00}    &  \textbf{0.00}    &     \textbf{6} \\
+          Z     &  0.87   &   0.59  &    0.70    &    22 \\
+          \textasciicircum  &    0.66  &    0.63  &    0.65   &    495 \\
+          \textasciitilde   &    0.96   &   0.79  &    0.87     &  212 \\
+
+\textbf{avg / total}  &    \textbf{ 0.82 } &    \textbf{0.81}     & \textbf{0.81}  &    \textbf{7152} \\
+
+          \end{tabular}
+       \caption{ \textbf{Maximum Entropy Markov Model }}
+\label{table2}
+\end{table}
+
+
+
+\newpage
+\nocite{*}
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
